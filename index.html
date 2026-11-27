@@ -1,0 +1,1329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>if("serviceWorker"in navigator&&location.protocol==="https:")addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})})</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15161C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Spy Teams">
+<meta name="description" content="Spy Teams: a team word party game. Two teams, 25 words; your spymaster gives one-word clues to find your words and avoid the trap. English and Arabic. Play online, free, no sign-up.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect x=%276%27 y=%276%27 width=%2724%27 height=%2724%27 rx=%275%27 fill=%27%23E5484D%27/%3E%3Crect x=%2734%27 y=%276%27 width=%2724%27 height=%2724%27 rx=%275%27 fill=%27%23EFE6D2%27/%3E%3Crect x=%276%27 y=%2734%27 width=%2724%27 height=%2724%27 rx=%275%27 fill=%27%23EFE6D2%27/%3E%3Crect x=%2734%27 y=%2734%27 width=%2724%27 height=%2724%27 rx=%275%27 fill=%27%233E8BFF%27/%3E%3C/svg%3E">
+<title>Spy Teams · Game Night</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@600;700;800&family=Manrope:wght@500;600;700;800&display=swap" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@600;700;800&family=Manrope:wght@500;600;700;800&display=swap"></noscript>
+<script>/* connection tools load in the background, so the page shows at once; room actions wait for NET */window.NET=Promise.all(['vendor/peerjs-1.5.4.min.js','vendor/mqtt-5.10.1.min.js'].map(function(s){return new Promise(function(r){var e=document.createElement('script');e.src=s;e.async=false;e.onload=e.onerror=function(){r()};document.head.appendChild(e)})})).then(function(){window.NET_DONE=1});</script>
+<script>/* Game Night mode: only on night links */if(/[?&]night=/.test(location.search))document.write('<script src="/night.js"><\/script>')</script>
+<style>
+/* Layout: two team score boxes on top, the 5x5 word grid in the middle (spymasters see the colour key as tinted edges), the clue form or the guessing controls underneath. */
+:root {
+  --bg: #15161C;
+  --bg-2: #0D0E12;
+  --bg-glow: #2A2D3A;
+  --panel: #1F212B;
+  --shade: rgba(0, 0, 0, .24);
+  --ink: #F2F5FC;
+  --muted: #A3B1D1;
+  --line: rgba(242, 245, 252, .14);
+  --accent: #F5C542;
+  --accent-soft: rgba(245, 197, 66, .25);
+  --on-accent: #2B2200;
+  --mint: #5EE0B5;
+  --pink: #FF5E7E;
+  --danger: #FF8A9A;
+  --shadow: rgba(0, 0, 0, .5);
+  --backdrop: rgba(4, 9, 20, .78);
+  --f-display: 'Rubik', 'Trebuchet MS', system-ui, sans-serif;
+  --f-body: 'Manrope', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background-color: var(--bg);
+  background-image: radial-gradient(ellipse at 50% 30%, var(--bg-glow), var(--bg) 60%, var(--bg-2));
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.4;
+  padding-left: max(14px, env(safe-area-inset-left, 0px));
+  padding-right: max(14px, env(safe-area-inset-right, 0px));
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+a { color: var(--accent); }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; line-height: 1.1; font-weight: 800; text-wrap: balance; }
+
+.screen { min-height: 100%; display: grid; place-items: center; padding-block: max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-bottom, 0px)); }
+.panel { width: min(100%, 460px); display: flex; flex-direction: column; gap: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 24px 20px; box-shadow: 0 20px 50px var(--shadow); }
+.logo { font-size: 34px; display: flex; align-items: center; gap: 12px; }
+.logo svg { width: 42px; height: 42px; flex: none; }
+.tagline { margin: 6px 0 0; color: var(--muted); }
+.block { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.block h3 { font-size: 17px; font-weight: 700; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row > * { min-width: 0; }
+.grow { flex: 1; }
+.input { font: inherit; font-size: 16px; min-height: 46px; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg-2); color: var(--ink); width: 100%; }
+.code-input { text-transform: uppercase; letter-spacing: .3em; font-weight: 800; }
+.msg { min-height: 20px; font-weight: 700; font-size: 13.5px; color: var(--muted); }
+.msg.err { color: var(--danger); }
+.note { font-size: 13px; color: var(--muted); margin: 0; }
+.eyebrow { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.room-code { font-family: var(--f-display); font-weight: 800; font-size: 48px; letter-spacing: .16em; color: var(--accent); line-height: 1; }
+.share { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.share code { background: var(--bg-2); border: 1px solid var(--line); padding: 6px 9px; border-radius: 8px; word-break: break-all; flex: 1; min-width: 0; font-family: var(--f-body); }
+.plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.plist li { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; background: var(--shade); border: 1px solid var(--line); }
+.plist .nm { font-weight: 800; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--mint); flex: none; }
+.dot.off { background: var(--danger); }
+.dot.cpu { background: var(--muted); }
+.x { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 6px 12px; min-height: 36px; font-size: 13px; font-weight: 700; }
+.set-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.set-row label { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 800; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.set-row select { min-height: 42px; padding: 6px 10px; }
+.btn { border-radius: 12px; padding: 12px 14px; font-weight: 800; font-size: 15px; border: 1px solid var(--line); background: var(--shade); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:not(:disabled):hover { filter: brightness(.93); }
+.ghost { background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; min-height: 38px; font-size: 13px; font-weight: 700; color: var(--ink); }
+@media (hover: hover) { .ghost:hover { border-color: var(--accent); } }
+
+/* Game */
+#app { height: 100%; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; padding-block: max(8px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-bottom, 0px)); }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand h1 { font-size: 21px; }
+.brand p { margin: 1px 0 0; font-size: 11px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; font-weight: 700; }
+.net { color: var(--mint); }
+.net.warn { color: var(--accent); }
+.top-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+#btnMenu { display: none; }
+.menu-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.menu-list .btn { text-align: left; }
+
+.people { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.people::-webkit-scrollbar { display: none; }
+.who { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 10px; min-width: 70px; border-radius: 12px; background: var(--shade); border: 1px solid var(--line); }
+.who .n { font-weight: 800; font-size: 12.5px; max-width: 86px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who .s { font-family: var(--f-display); font-weight: 800; font-size: 17px; color: var(--accent); line-height: 1; }
+.who .t { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.who.done { border-color: var(--mint); }
+.who.done .t { color: var(--mint); }
+.who.me { box-shadow: inset 0 0 0 1px var(--accent); }
+
+.stage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 8px 4px; overflow-y: auto; }
+.qno { font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.question { font-family: var(--f-display); font-weight: 800; font-size: 27px; line-height: 1.2; max-width: 22ch; text-wrap: balance; }
+.clock { --p: 1; width: 66px; height: 66px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent) calc(var(--p) * 360deg), rgba(255,255,255,.08) 0); position: relative; font-family: var(--f-display); font-weight: 800; font-size: 22px; }
+.clock::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: var(--bg); }
+.clock span { position: relative; }
+.clock.low { background: conic-gradient(var(--pink) calc(var(--p) * 360deg), rgba(255,255,255,.08) 0); }
+.answer-big { font-family: var(--f-display); font-weight: 800; font-size: 46px; color: var(--mint); line-height: 1; animation: pop .45s ease both; }
+.answer-note { font-size: 13px; color: var(--muted); font-weight: 600; max-width: 40ch; }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* the number line on the reveal */
+.line { position: relative; width: 100%; max-width: 520px; height: 64px; margin: 6px 0 0; }
+.line .bar { position: absolute; left: 0; right: 0; top: 34px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.14); }
+.line .mark { position: absolute; top: 24px; width: 3px; height: 24px; margin-left: -1.5px; background: var(--mint); border-radius: 2px; }
+.line .mark b { position: absolute; top: 26px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--mint); white-space: nowrap; }
+.line .pin { position: absolute; top: 4px; transform: translateX(-50%); font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; max-width: 90px; overflow: hidden; text-overflow: ellipsis; animation: drop .5s ease both; }
+.line .pin.win { border-color: var(--accent); color: var(--accent); }
+.line .pin::after { content: ''; position: absolute; left: 50%; top: 100%; width: 2px; height: var(--stem, 9px); background: var(--muted); margin-left: -1px; }
+@keyframes drop { from { transform: translate(-50%, -12px); opacity: 0; } to { transform: translateX(-50%); opacity: 1; } }
+
+.results { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 5px; }
+.results li { display: grid; grid-template-columns: 26px 1fr auto auto; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 12px; background: var(--shade); border: 1px solid var(--line); text-align: left; animation: pop .35s ease both; }
+.results li.me-row { border-color: var(--accent); }
+.results .rk { font-family: var(--f-display); font-weight: 800; color: var(--accent); }
+.results .nm { font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.results .nm small { display: block; color: var(--muted); font-weight: 600; font-size: 11.5px; }
+.results .g { font-variant-numeric: tabular-nums; font-weight: 800; }
+.results .pt { font-weight: 800; color: var(--mint); min-width: 30px; text-align: right; }
+.results .pt.zero { color: var(--muted); }
+
+.act { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); }
+.act.mine { border-color: var(--accent); }
+.status { font-size: 15px; font-weight: 800; }
+.act.mine .status { color: var(--accent); }
+.sub { font-size: 13px; color: var(--muted); font-weight: 600; }
+.guess-form { display: flex; gap: 8px; }
+.guess-form .input { flex: 1; font-family: var(--f-display); font-size: 24px; font-weight: 800; text-align: center; letter-spacing: .02em; }
+.guess-form .btn { min-width: 110px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions .btn { flex: 1; }
+
+.log { font-size: 12.5px; color: var(--muted); }
+.log summary { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 0; }
+.log ol { margin: 6px 0 0; padding: 8px 12px 8px 30px; max-height: 140px; overflow-y: auto; background: var(--shade); border-radius: 10px; border: 1px solid var(--line); }
+
+.modal { position: fixed; inset: 0; z-index: 20; background: var(--backdrop); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.sheet { width: min(100%, 520px); max-height: 100%; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px 20px; box-shadow: 0 20px 50px var(--shadow); }
+.sheet h2 { font-size: 25px; margin-bottom: 4px; }
+.sheet h2 span { color: var(--accent); }
+.sheet .lede { color: var(--muted); margin: 0 0 14px; }
+.sheet ul.rules { margin: 0 0 16px; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.sheet ul.rules b { color: var(--accent); }
+.order { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.order li { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; background: var(--shade); border: 1px solid var(--line); }
+.order li.me-row { border-color: var(--accent); }
+.order .pl { font-family: var(--f-display); font-weight: 800; color: var(--accent); font-size: 18px; }
+.order .nm { font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order .pts { font-variant-numeric: tabular-nums; font-weight: 800; text-align: right; min-width: 52px; }
+.order .pts small { display: block; color: var(--muted); font-weight: 600; font-size: 11px; }
+.sheet-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+
+@media (max-width: 560px) {
+  #btnRules, #btnScores, #btnLeave { display: none; }
+  #btnMenu { display: inline-block; }
+  .room-code { font-size: 40px; }
+  .question { font-size: 23px; }
+  .answer-big { font-size: 40px; }
+}
+@media (max-height: 560px) and (orientation: landscape) {
+  .brand p, .log { display: none; }
+  .question { font-size: 20px; }
+  .clock { width: 48px; height: 48px; font-size: 17px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+/* Spy Teams */
+:root { --red: #E5484D; --blue: #3E8BFF; --neutral: #CDBF9F; --trap: #0B0B0F; }
+.teams { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.team { border-radius: 14px; padding: 10px; border: 2px solid var(--line); background: var(--shade); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.team.r { border-color: var(--red); }
+.team.b { border-color: var(--blue); }
+.team h4 { margin: 0; font-family: var(--f-display); font-size: 16px; }
+.team.r h4 { color: var(--red); }
+.team.b h4 { color: var(--blue); }
+.team ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13.5px; font-weight: 700; }
+.team li { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.team li .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.team li.off { opacity: .5; }
+.team li .x { padding: 2px 6px; min-height: 26px; font-size: 11px; }
+.team .btn { padding: 8px; font-size: 13px; }
+.spy-tag { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; background: var(--ink); color: var(--bg); }
+.scorebar { display: flex; gap: 8px; align-items: stretch; }
+.sb { flex: 1; border-radius: 12px; padding: 6px 10px; border: 2px solid var(--line); background: var(--shade); min-width: 0; }
+.sb.r { border-color: var(--red); } .sb.b { border-color: var(--blue); }
+.sb.on.r { background: rgba(229, 72, 77, .22); } .sb.on.b { background: rgba(62, 139, 255, .22); }
+.sb .big { font-family: var(--f-display); font-weight: 800; font-size: 20px; line-height: 1; }
+.sb.r .big { color: var(--red); } .sb.b .big { color: var(--blue); }
+.sb .who-list { font-size: 11.5px; color: var(--muted); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb .who-list b { color: var(--ink); }
+.clue-bar { text-align: center; font-weight: 800; min-height: 28px; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.clue-bar .cw { font-family: var(--f-display); font-size: 24px; letter-spacing: .03em; padding: 2px 12px; border-radius: 10px; background: var(--ink); color: var(--bg); }
+.clue-bar .cn { font-family: var(--f-display); font-size: 24px; color: var(--accent); }
+.clue-bar.r .cw { background: var(--red); color: #fff; } .clue-bar.b .cw { background: var(--blue); color: #fff; }
+.stage { justify-content: flex-start; gap: 10px; }
+.grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; width: 100%; max-width: 620px; }
+.card { position: relative; min-height: 56px; border-radius: 10px; border: 2px solid rgba(0,0,0,.25); background: #EFE6D2; color: #23201A; font-weight: 800; font-size: clamp(10.5px, 2.9vw, 15px); padding: 4px 2px; display: flex; align-items: center; justify-content: center; text-align: center; overflow-wrap: anywhere; line-height: 1.1; text-transform: uppercase; letter-spacing: .01em; }
+.card[dir="rtl"] { text-transform: none; font-size: clamp(12px, 3.4vw, 17px); }
+.card:disabled { cursor: default; }
+.card.can:hover { outline: 2px solid var(--accent); }
+.card.pointed { outline: 3px solid var(--accent); outline-offset: 1px; }
+.card .pts { position: absolute; top: -7px; left: 2px; right: 2px; font-size: 9px; font-weight: 800; color: var(--on-accent); background: var(--accent); border-radius: 6px; padding: 0 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: none; }
+.card .go { position: absolute; inset: auto 3px 3px 3px; font-size: 10px; font-weight: 800; background: var(--accent); color: var(--on-accent); border-radius: 6px; padding: 1px 0; text-transform: none; }
+/* the spymaster's key: tinted edges on hidden words */
+.card.key-r { box-shadow: inset 0 0 0 4px var(--red); }
+.card.key-b { box-shadow: inset 0 0 0 4px var(--blue); }
+.card.key-n { box-shadow: inset 0 0 0 4px var(--neutral); }
+.card.key-x { box-shadow: inset 0 0 0 4px var(--trap); background: #9C9488; }
+/* revealed */
+.card.up { animation: flip .4s ease both; }
+.card.up.k-r { background: var(--red); color: #fff; border-color: var(--red); }
+.card.up.k-b { background: var(--blue); color: #fff; border-color: var(--blue); }
+.card.up.k-n { background: var(--neutral); color: #4A4235; }
+.card.up.k-x { background: var(--trap); color: #fff; }
+.card.up.dim { opacity: .38; }
+.card.up.fresh { animation: flip .5s ease both; }
+@keyframes flip { from { transform: rotateY(90deg); } to { transform: none; } }
+.clue-form { display: grid; grid-template-columns: 1fr 74px auto; gap: 8px; }
+.clue-form .input { font-weight: 800; min-width: 0; }
+.clue-form select { min-height: 46px; }
+.err-line { color: var(--danger); font-weight: 800; font-size: 13px; min-height: 16px; }
+.history { font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: center; }
+.history b.r { color: var(--red); } .history b.b { color: var(--blue); }
+.clockline { height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); width: 100%; max-width: 620px; overflow: hidden; }
+.clockline i { display: block; height: 100%; background: var(--accent); width: 100%; transition: width .4s linear; }
+@media (max-width: 560px) { .card { min-height: 50px; } .clue-bar .cw, .clue-bar .cn { font-size: 20px; } }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="spyi" viewBox="0 0 64 64"><rect x="6" y="6" width="24" height="24" rx="5" fill="#E5484D"/><rect x="34" y="6" width="24" height="24" rx="5" fill="#EFE6D2"/><rect x="6" y="34" width="24" height="24" rx="5" fill="#EFE6D2"/><rect x="34" y="34" width="24" height="24" rx="5" fill="#3E8BFF"/><circle cx="46" cy="18" r="5" fill="#23201A"/></symbol></svg>
+
+<section class="screen" id="home" hidden>
+  <div class="panel">
+    <div>
+      <h1 class="logo"><svg aria-hidden="true"><use href="#spyi"/></svg>Spy Teams</h1>
+      <p class="tagline">Two teams, 25 words. Your spymaster knows which words are yours and gives one-word clues. Find all your words first, and stay away from the trap.</p>
+    </div>
+    <label class="eyebrow" for="hName">Your name</label>
+    <input class="input" id="hName" maxlength="14" autocomplete="nickname" placeholder="Type your name">
+    <div class="block">
+      <h3>Play with friends</h3>
+      <div id="onlineBox" class="row" style="flex-direction: column; align-items: stretch;">
+        <button class="btn primary" id="hCreate" type="button">Create a room</button>
+        <form class="row" id="joinForm">
+          <input class="input code-input grow" id="hCode" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" style="width:auto">
+          <button class="btn" id="hJoin" type="submit">Join room</button>
+        </form>
+        <button class="btn" id="hReopen" type="button" hidden>Reopen your room</button>
+      </div>
+      <p class="note" id="onlineNote" hidden>Online rooms work on the website, not inside this preview: <a href="https://libyan11.github.io/spy-teams/" target="_blank" rel="noopener">libyan11.github.io/spy-teams</a></p>
+      <p class="note">4 or more players, each on their own phone. Best in the same room or on a call.</p>
+    </div>
+    <p class="msg" id="homeMsg" aria-live="polite"></p>
+    <div class="row"><button class="ghost" id="hRules" type="button">Rules</button></div>
+  </div>
+</section>
+
+<section class="screen" id="lobby" hidden>
+  <div class="panel">
+    <div>
+      <p class="eyebrow">Room code</p>
+      <div class="room-code" id="lCode">····</div>
+      <p class="note" id="lNet">Opening room…</p>
+    </div>
+    <div class="share">
+      <code id="lLink"></code>
+      <button class="ghost" id="lCopy" type="button">Copy link</button>
+    </div>
+    <p class="note" id="lCopyMsg" aria-live="polite"></p>
+    <div class="block">
+      <h3 id="lCount">Pick a team</h3>
+      <div class="teams" id="lTeams"></div>
+      <div class="set-row" id="lSet">
+        <label>Words <select class="input" id="lLangSel"><option value="en">English</option><option value="ar">العربية</option></select></label>
+        <label>Turn timer <select class="input" id="lTimerSel"><option value="0">No timer</option><option value="60">60 seconds</option><option value="90">90 seconds</option><option value="120">2 minutes</option></select></label>
+      </div>
+      <div class="row" id="lHost" style="flex-direction: column; align-items: stretch;">
+        <button class="btn" id="lShuffle" type="button">Shuffle teams</button>
+        <button class="btn primary" id="lStart" type="button">Start game</button>
+      </div>
+      <p class="note" id="lNote"></p>
+    </div>
+    <div class="row"><button class="ghost" id="lRules" type="button">Rules</button><button class="ghost" id="lLeave" type="button">Leave room</button></div>
+  </div>
+</section>
+
+<div id="app" hidden>
+  <header class="top">
+    <div class="brand">
+      <h1>Spy Teams</h1>
+      <p><span id="roundNo">Game 1</span> <span class="net" id="net"></span></p>
+    </div>
+    <div class="top-actions">
+      <button class="ghost" id="btnRules" type="button">Rules</button>
+      <button class="ghost" id="btnScores" type="button">Teams</button>
+      <button class="ghost" id="btnLeave" type="button">Leave</button>
+      <button class="ghost" id="btnMenu" type="button" aria-label="Menu: rules, teams, leave">Menu</button>
+    </div>
+  </header>
+
+  <section class="scorebar" id="people" aria-label="Teams"></section>
+
+  <section class="stage" id="stage" aria-live="polite"></section>
+
+  <section class="act" id="act">
+    <div class="status" id="status"></div>
+    <div class="sub" id="sub"></div>
+    <form class="clue-form" id="clueForm" hidden>
+      <input class="input" id="clueIn" maxlength="24" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="One-word clue" enterkeyhint="send" aria-label="Your clue">
+      <select class="input" id="clueNum" aria-label="How many words">
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="0">0</option><option value="inf">∞</option>
+      </select>
+      <button class="btn primary" id="clueSend" type="submit">Give clue</button>
+    </form>
+    <div class="err-line" id="errLine" aria-live="assertive"></div>
+    <div id="actMore"></div>
+  </section>
+
+  <details class="log" id="log">
+    <summary id="logLast">Game log</summary>
+    <ol id="logList" reversed></ol>
+  </details>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ================= constants & helpers ================= */
+const MAX_PLAYERS = 16, MIN_PER_TEAM = 2;
+/* board words: simple nouns that can mean more than one thing make the best clues */
+const WORDS_EN = 'apple,arm,army,back,ball,band,bank,bark,bat,battery,beach,bear,bed,bell,belt,berry,bill,block,board,bolt,bomb,bond,boot,bottle,bow,box,bridge,brush,bug,button,cake,camel,camp,canal,candle,cap,capital,car,card,carpet,castle,cat,cell,chair,change,check,chest,chick,china,circle,cliff,cloak,clock,cloud,club,coach,code,coin,cold,comb,compound,concert,cook,copper,cotton,court,cover,crane,crash,crown,cup,current,cycle,date,day,deck,desert,diamond,dice,doctor,dog,draft,dragon,dress,drill,drop,drum,duck,eagle,egg,engine,eye,face,fair,fall,fan,fence,field,figure,file,film,fire,fish,flag,flute,fly,foot,fork,frog,game,gas,ghost,giant,glass,glove,gold,grass,green,ground,gum,hair,hand,head,heart,hole,hook,horn,horse,hospital,ice,iron,jack,jam,jet,key,kick,king,kite,knife,knight,lab,lamp,lap,laser,lead,leaf,lemon,letter,light,line,link,lion,lock,log,mail,mammoth,map,march,mark,mask,match,mercury,mine,mint,model,mole,moon,mount,mouse,mug,nail,needle,net,night,note,nut,oil,olive,orange,organ,palm,pan,paper,park,pass,paste,pen,penguin,phone,piano,pie,pilot,pin,pipe,pirate,pit,plane,plate,play,plot,point,pole,pool,port,post,press,queen,rabbit,race,ray,ring,robot,rock,roll,root,rose,round,ruler,saddle,salt,satellite,scale,school,screen,seal,server,shadow,shark,ship,shoe,shop,shot,sink,ski,slip,snake,snow,soap,soldier,sound,space,spell,spider,spike,spine,spot,spring,spy,square,stadium,staff,star,state,stick,stock,storm,straw,stream,string,sugar,suit,swing,switch,table,tail,tap,tea,teacher,temple,thief,tie,tooth,torch,tower,track,train,tree,triangle,trip,truck,trunk,tube,turkey,wall,watch,water,wave,web,well,whale,whip,wind,window,wing,witch,wolf,worm,yard';
+const WORDS_AR = 'شمس،قمر،نجمة،سحابة،مطر،بحر،نهر،جبل،صحراء،واحة،نخلة،شجرة،وردة،زيتون،تمر،تفاحة،برتقال،ليمون،عسل،ملح،سكر،خبز،حليب،شاي،قهوة،كسكسي،بازين،مكرونة،جمل،حصان،أسد،ذئب،ثعلب،قط،كلب،سمكة،حوت،قرش،نسر،صقر،بومة،غراب،حمامة،نحلة،نملة،عقرب،أفعى،فيل،زرافة،قرد،دب،أرنب،غزال،سلحفاة،ضفدع،ديك،بيت،باب،شباك،مفتاح،قفل،سرير،كرسي،طاولة،مرآة،ساعة،مصباح،شمعة،كتاب،قلم،ورقة،رسالة،هاتف،حاسوب،شاشة،كاميرا،راديو،تلفاز،سيارة،طائرة،قطار،سفينة،دراجة،حافلة،صاروخ،جسر،طريق،شارع،سوق،مسجد،مدرسة،مستشفى،ملعب،مطار،ميناء،قلعة،برج،هرم،كهف،بئر،خيمة،قصر،سجن،بنك،مطعم،مخبز،متحف،ملك،ملكة،أمير،جندي،طبيب،معلم،طيار،طباخ،لص،شرطي،جاسوس،قرصان،ساحر،شبح،عملاق،مارد،فارس،بطل,كرة،شبكة،مرمى،حكم،كأس،ميدالية،ذهب،فضة،حديد،نحاس،ألماس،لؤلؤ،خاتم،تاج،سيف،درع،قوس،سهم،مدفع،قنبلة،علم،خريطة،بوصلة،كنز،صندوق،حقيبة،محفظة،نقود،عملة،بطاقة،تذكرة،هدية،بالون،طائرة ورقية،دمية،لعبة،نرد،شطرنج،ورق اللعب،عين،أذن،أنف،فم،سن،لسان،يد،قدم،قلب،رأس،شعر،ظهر،دم،عظم،ظل،نار،ماء،هواء،تراب،ثلج،جليد،رمل،حجر،صخرة،ريح،عاصفة،برق،رعد،قوس قزح،ليل،نهار،صباح،فجر،غروب،حلم،صوت،لون،موسيقى،طبل،عود،ناي،أغنية،رقصة،عرس،عيد،رمضان،حج،فانوس،سجادة،مسبحة،بخور،عطر،صابون،مشط،فرشاة،منشفة،قميص،حذاء،قبعة،نظارة،عباءة،وشاح،إبرة،خيط،مقص،سكين،ملعقة،صحن،كوب،إبريق،قدر،فرن،ثلاجة،غسالة،مروحة،مكيف،سلم،حبل،سلسلة،مسمار،مطرقة،منشار،فأس،مجرفة,دلو,مظلة,كيس,صاروخ فضائي,كوكب,فضاء,روبوت,ديناصور,تنين,ذهب أسود,نفط,بترول,غاز,كهرباء,بطارية,مغناطيس,زجاج,مرآة,سحر,سر,رمز,شيفرة,جيش,حرب,سلام,قانون,محكمة,وزير,رئيس,سفير,خليج,جزيرة,غابة,حديقة,بستان,مزرعة,حقل,قمح,شعير,ذرة,فول,بصل,ثوم,طماطم,فلفل,بطاطا,خيار,بطيخ,عنب,تين,رمان,موز';
+
+const BANK = {
+  en: [...new Set(WORDS_EN.split(',').map(w => w.trim()).filter(Boolean))],
+  ar: [...new Set(WORDS_AR.split(/[,،]/).map(w => w.trim()).filter(Boolean))]
+};
+const TEAM = { r: 'Red', b: 'Blue' };
+const TIMERS = [0, 60, 90, 120];
+function other(t) { return t === 'r' ? 'b' : 'r'; }
+
+const LS = (() => { try { return window.localStorage; } catch (e) { return null; } })();
+const SS = (() => { try { return window.sessionStorage; } catch (e) { return null; } })();
+function getItem(st, k) { try { const v = st && st.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+function setItem(st, k, v) { try { if (!st) return; if (v == null) st.removeItem(k); else st.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+const rid = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function norm(s) {
+  return String(s == null ? '' : s).toLowerCase()
+    .replace(/[ً-ْـ]/g, '').replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
+    .replace(/[^\p{L}\p{N}]+/gu, '').replace(/^ال(?=..)/, '');
+}
+function fixOpts(o) { o = o || {}; return { lang: o.lang === 'ar' ? 'ar' : 'en', timer: TIMERS.includes(+o.timer) ? +o.timer : 0 }; }
+/* a clue is one word (two at most, like "ice cream"), and can't be a word on the board or part of one */
+function clueProblem(text, board) {
+  const t = String(text || '').trim();
+  if (!t) return 'Type a clue first.';
+  if (t.split(/\s+/).length > 2) return 'One word only (two at most, like "ice cream").';
+  if (/\d/.test(t)) return 'No numbers in the clue.';
+  const n = norm(t);
+  if (n.length < 2) return 'That clue is too short.';
+  const hit = board.find(c => !c.up && (norm(c.w) === n || (n.length >= 3 && norm(c.w).includes(n)) || (norm(c.w).length >= 3 && n.includes(norm(c.w)))));
+  if (hit) return `You can't use a word on the board ("${hit.w}").`;
+  return '';
+}
+
+const me = (() => { let id = getItem(SS, 'st-id'); if (!id) { id = rid(); setItem(SS, 'st-id', id); } return id; })();
+let myName = getItem(LS, 'st-name') || '';
+const onlineOK = !/claude|anthropic/i.test(location.hostname) && location.protocol !== 'data:';
+
+let role = null;      // 'host' | 'guest' | null
+let roomCode = '';
+let S = null;         // full game state (host only)
+let V = null;         // what this screen shows
+let timer = null, token = 0;
+let pickFor = '', shownOver = null;
+let homeMsg = '', homeErr = false;
+
+/* ================= game engine (runs on the host) ================= */
+function newPlayer(id, name, bot) { return { id, name, bot: false, online: true, team: S && S.players ? smallerTeam() : 'r', spy: false, wins: 0 }; }
+function idxOf(pid) { return S.players.findIndex(p => p.id === pid); }
+function addLog(t) { S.log.push(t); if (S.log.length > 80) S.log.shift(); }
+function watching() { return S.players.some(q => q.online); }
+function needs(i) { return S.players[i].online; }
+function members(t) { return S.players.map((p, i) => i).filter(i => S.players[i].team === t); }
+function spyOf(t) { return S.players.findIndex(p => p.team === t && p.spy); }
+function smallerTeam() { return members('r').length <= members('b').length ? 'r' : 'b'; }
+
+function baseState(mode, opts) {
+  return { v: 1, mode, hostId: me, players: [], waiting: [], phase: 'lobby', opts: fixOpts(opts), game: 0, lang: 'en',
+    board: [], first: 'r', turn: 'r', clue: null, left: 0, points: {}, clues: [], deadline: 0, total: 0, winner: '', why: '', usedWords: { en: [], ar: [] }, log: [] };
+}
+/* new arrivals join the smaller team straight away, even mid-game, as a guesser */
+function seatWaiting() {
+  while (S.waiting.length) {
+    const w = S.waiting.shift();
+    if (S.players.length >= MAX_PLAYERS) continue;
+    const p = newPlayer(w.id, w.name, false);
+    p.online = w.online !== false;
+    S.players.push(p);
+  }
+}
+function schedule(fn, ms) {
+  clearTimeout(timer);
+  const t = token;
+  timer = setTimeout(() => { if (t === token) fn(); }, ms);
+}
+function setClock() { S.total = S.opts.timer * 1000; S.deadline = S.opts.timer ? Date.now() + S.total : 0; }
+function readyProblem() {
+  for (const t of ['r', 'b']) {
+    if (members(t).length < MIN_PER_TEAM) return `${TEAM[t]} needs at least 2 players.`;
+    if (spyOf(t) < 0) return `${TEAM[t]} needs a spymaster.`;
+  }
+  return '';
+}
+
+function newGame() {
+  token++; clearTimeout(timer);
+  seatWaiting();
+  S.game++;
+  S.lang = S.opts.lang;
+  const bank = BANK[S.lang];
+  const used = S.usedWords[S.lang] || (S.usedWords[S.lang] = []);
+  let pool = bank.filter(w => !used.includes(w));
+  if (pool.length < 25) { S.usedWords[S.lang] = []; pool = bank.slice(); }
+  const words = shuffle(pool).slice(0, 25);
+  S.usedWords[S.lang].push(...words);
+  S.first = Math.random() < 0.5 ? 'r' : 'b';
+  const keys = shuffle([].concat(Array(9).fill(S.first), Array(8).fill(other(S.first)), Array(7).fill('n'), ['x']));
+  S.board = words.map((w, i) => ({ w, k: keys[i], up: false, by: '' }));
+  S.turn = S.first; S.clues = []; S.points = {}; S.winner = ''; S.why = '';
+  addLog(`Game ${S.game}: ${TEAM[S.first]} goes first and has 9 words to find. ${TEAM[other(S.first)]} has 8.`);
+  startClue();
+}
+function remaining(t) { return S.board.filter(c => c.k === t && !c.up).length; }
+function startClue() {
+  token++; clearTimeout(timer);
+  S.phase = 'clue'; S.clue = null; S.left = 0; S.points = {};
+  setClock();
+  step();
+}
+function giveClue(pi, word, num) {
+  if (S.phase !== 'clue' || pi < 0) return;
+  const p = S.players[pi];
+  if (!p.spy || p.team !== S.turn) return;
+  word = String(word || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+  if (clueProblem(word, S.board)) return;
+  const n = num === 'inf' ? 'inf' : Math.max(0, Math.min(9, Math.floor(+num) || 0));
+  S.clue = { w: word, n, by: pi, team: S.turn };
+  S.clues.push({ w: word, n, team: S.turn, found: [] });
+  S.left = n === 'inf' || n === 0 ? 99 : n + 1;
+  S.phase = 'guess'; S.points = {};
+  setClock();
+  addLog(`${TEAM[S.turn]} clue: ${word}, ${n === 'inf' ? 'unlimited' : n}.`);
+  step();
+}
+function canGuess(pi) { const p = S.players[pi]; return S.phase === 'guess' && p && p.team === S.turn && !p.spy; }
+function point(pi, k) {
+  if (!canGuess(pi)) return;
+  k = +k;
+  if (!(k >= 0 && k < 25) || S.board[k].up) return;
+  if (S.points[pi] === k) delete S.points[pi]; else S.points[pi] = k;
+  changed();
+}
+function reveal(pi, k) {
+  if (!canGuess(pi)) return;
+  k = +k;
+  const c = S.board[k];
+  if (!c || c.up) return;
+  c.up = true; c.by = S.players[pi].name;
+  S.points = {};
+  const t = S.turn;
+  const last = S.clues[S.clues.length - 1];
+  if (last) last.found.push({ w: c.w, k: c.k });
+  if (c.k === 'x') { addLog(`${S.players[pi].name} picked "${c.w}": the trap! ${TEAM[t]} loses.`); return finish(other(t), 'trap'); }
+  if (c.k !== t) {
+    addLog(`${S.players[pi].name} picked "${c.w}": ${c.k === 'n' ? 'nobody\'s word' : TEAM[c.k] + '\'s word'}. Turn over.`);
+    if (c.k !== 'n' && remaining(c.k) === 0) return finish(c.k, 'all');
+    return endTurn(true);
+  }
+  addLog(`${S.players[pi].name} picked "${c.w}": correct!`);
+  if (remaining(t) === 0) return finish(t, 'all');
+  S.left--;
+  if (S.left <= 0) return endTurn(true);
+  changed();
+}
+function endTurn(quiet) {
+  if (S.phase !== 'guess' && S.phase !== 'clue') return;
+  if (!quiet) addLog(`${TEAM[S.turn]} ends their turn.`);
+  S.turn = other(S.turn);
+  startClue();
+}
+function finish(t, why) {
+  token++; clearTimeout(timer);
+  S.phase = 'over'; S.winner = t; S.why = why;
+  S.players.forEach(p => { if (p.team === t) p.wins = (p.wins || 0) + 1; });
+  addLog(`${TEAM[t]} wins!`);
+  step();
+}
+function tick() {
+  if ((S.phase === 'clue' || S.phase === 'guess') && S.deadline && Date.now() >= S.deadline) {
+    addLog(`Time's up for ${TEAM[S.turn]}.`);
+    endTurn(true);
+    return;
+  }
+  schedule(tick, 500);
+}
+function step() {
+  changed();
+  if (S.phase === 'clue' || S.phase === 'guess') schedule(tick, 500);
+}
+
+function handleAct(pid, act, data) {
+  if (!S) return;
+  data = data || {};
+  const pi = idxOf(pid);
+  const isHost = pid === S.hostId;
+  if (act === 'clue') { giveClue(pi, data.w, data.n); return; }
+  if (act === 'point') { point(pi, data.k); return; }
+  if (act === 'reveal') { reveal(pi, data.k); return; }
+  if (act === 'endTurn') { if (canGuess(pi)) endTurn(false); return; }
+  if (act === 'team') {
+    if (pi < 0 || !(data.t === 'r' || data.t === 'b')) return;
+    if (S.phase !== 'lobby' && S.phase !== 'over') return;
+    const p = S.players[pi];
+    if (p.team !== data.t) { p.team = data.t; p.spy = false; }
+    changed(); return;
+  }
+  if (act === 'spy') {
+    if (pi < 0) return;
+    const p = S.players[pi];
+    if (S.phase === 'lobby' || S.phase === 'over') {
+      if (p.spy) p.spy = false;
+      else { const s = spyOf(p.team); if (s >= 0) S.players[s].spy = false; p.spy = true; }
+      changed(); return;
+    }
+    /* mid-game: a guesser may take over only if their spymaster has gone */
+    const s = spyOf(p.team);
+    if (!p.spy && p.team && (s < 0 || !S.players[s].online)) { if (s >= 0) S.players[s].spy = false; p.spy = true; delete S.points[pi]; addLog(`${p.name} is now ${TEAM[p.team]}'s spymaster.`); changed(); }
+    return;
+  }
+  if (!isHost) return;
+  if (act === 'remove') {
+    if (S.phase !== 'lobby' || data.id === S.hostId) return;
+    const i = idxOf(data.id);
+    if (i < 0) return;
+    S.players.splice(i, 1);
+    conns.forEach(c => { if (c.pid === data.id) { try { c.send({ t: 'kicked' }); } catch (e) { /* gone */ } } });
+    changed();
+  } else if (act === 'shuffle') {
+    if (S.phase !== 'lobby' && S.phase !== 'over') return;
+    const order = shuffle(S.players.map((p, i) => i));
+    order.forEach((i, k) => { S.players[i].team = k % 2 ? 'b' : 'r'; S.players[i].spy = false; });
+    ['r', 'b'].forEach(t => { const m = members(t); if (m.length) S.players[m[0]].spy = true; });
+    changed();
+  } else if (act === 'settings') {
+    if (S.phase !== 'lobby') return;
+    S.opts = fixOpts(data);
+    changed();
+  } else if (act === 'start') {
+    if ((S.phase !== 'lobby' && S.phase !== 'over') || readyProblem()) return;
+    newGame();
+  } else if (act === 'lobby') {
+    if (S.phase !== 'over') return;
+    seatWaiting();
+    S.phase = 'lobby';
+    changed();
+  }
+}
+
+/* only spymasters (and everyone, once the game ends) see the colour of unrevealed words */
+function viewFor(pid) {
+  const idx = S.players.findIndex(p => p.id === pid);
+  const mine = S.players[idx];
+  const sees = S.phase === 'over' || (mine && mine.spy);
+  const v = JSON.parse(JSON.stringify({ mode: S.mode, phase: S.phase, opts: S.opts, game: S.game, lang: S.lang, first: S.first, turn: S.turn,
+    clue: S.clue, left: S.left, clues: S.clues, winner: S.winner, why: S.why, log: S.log, hostId: S.hostId }));
+  v.me = idx;
+  v.waiting = S.waiting.map(w => w.name);
+  v.board = S.board.map(c => ({ w: c.w, up: c.up, by: c.by, k: c.up || sees ? c.k : '' }));
+  v.rem = { r: remaining('r'), b: remaining('b') };
+  v.points = {};
+  Object.keys(S.points).forEach(pi => { const k = S.points[pi]; (v.points[k] = v.points[k] || []).push(S.players[pi].name); });
+  v.myPoint = idx >= 0 && S.points[idx] != null ? S.points[idx] : -1;
+  v.left_ms = (S.phase === 'clue' || S.phase === 'guess') && S.deadline ? Math.max(0, S.deadline - Date.now()) : 0;
+  v.total = S.total;
+  v.ready = readyProblem();
+  v.players = S.players.map(p => ({ id: p.id, name: p.name, online: p.online, team: p.team, spy: p.spy, wins: p.wins || 0 }));
+  return v;
+}
+
+/* Game Night: the winning team all place first */
+function nightRank() {
+  if (S.phase !== 'over') return null;
+  return S.players.map(p => ({ name: p.name, bot: false, place: p.team === S.winner ? 0 : 1 }));
+}
+function changed() {
+  if (S && S.waiting.length) seatWaiting();
+  if (role === 'host') broadcast();
+  if (role === 'host' && window.GN) GN.report(nightRank());
+  if (role === 'host') {
+    V = viewFor(me);
+    setItem(LS, 'st-host', { code: roomCode, S });
+  }
+  render();
+}
+
+/* ================= networking (host-authoritative rooms) =================
+   A direct phone-to-phone link (PeerJS) is tried first. Public MQTT relays carry the same
+   messages as a backup when a network blocks the direct link. */
+const PEER_PREFIX = 'gamenight-spyteams-room-';
+const RELAYS = [
+  ['wss://public.cloud.shiftr.io:443', { username: 'public', password: 'public' }],
+  ['wss://broker.hivemq.com:8884/mqtt', {}],
+  ['wss://broker.emqx.io:8084/mqtt', {}]
+];
+const RELAY_ROOT = 'gamenight-spyteams-v1/';
+let peer = null, hostConn = null, link = null, everConnected = false;
+const conns = new Set(), relayConns = new Map();
+let stateSeq = 0, hostSess = '', lastState = { hs: null, sv: 0 };
+let fallbackTimer = 0, giveUpTimer = 0, retryTimer = 0, helloIv = 0, beatIv = 0, lastHostMsg = 0;
+const relay = { clients: [], seq: 0, sess: '', seen: new Map() };
+
+function netReady() { return typeof Peer !== 'undefined' || typeof mqtt !== 'undefined'; }
+let netWait = false;
+function waitNet(fn) { if (window.NET_DONE) return false; if (!netWait) { netWait = true; NET.then(() => { netWait = false; fn(); }); } return true; }
+function newCode() { const a = 'ABCDEFGHJKMNPQRSTUVWXYZ'; let c = ''; for (let i = 0; i < 4; i++) c += a[Math.floor(Math.random() * a.length)]; return c; }
+function peerIdFor(code) { return PEER_PREFIX + code.toLowerCase(); }
+function roomTopic(rest) { return 'room/' + roomCode.toLowerCase() + '/' + rest; }
+let netText = '', netWarn = false;
+function setNet(text, warn) { netText = text || ''; netWarn = !!warn; renderNet(); }
+
+function relayStart(listen, onMsg) {
+  relayStop();
+  if (typeof mqtt === 'undefined') return;
+  relay.sess = Math.random().toString(36).slice(2, 8);
+  const topic = RELAY_ROOT + listen;
+  relay.clients = RELAYS.map(([url, o]) => {
+    let c;
+    try { c = mqtt.connect(url, Object.assign({}, o, { clientId: 'st-' + me + '-' + Math.random().toString(36).slice(2, 6), connectTimeout: 10000, reconnectPeriod: 4000, keepalive: 30 })); }
+    catch (e) { return null; }
+    c.on('connect', () => c.subscribe(topic));
+    c.on('message', (t, buf) => {
+      let env; try { env = JSON.parse(buf.toString()); } catch (e) { return; }
+      if (!env || !env.id || env.f === me || relay.seen.has(env.id)) return;
+      relay.seen.set(env.id, 1);
+      if (relay.seen.size > 600) relay.seen.delete(relay.seen.keys().next().value);
+      onMsg(env.m, String(env.f || ''));
+    });
+    c.on('error', () => {});
+    return c;
+  }).filter(Boolean);
+}
+function relaySend(to, m) {
+  const env = JSON.stringify({ f: me, id: me + '.' + relay.sess + '.' + (++relay.seq), m });
+  relay.clients.forEach(c => { if (c.connected) { try { c.publish(RELAY_ROOT + to, env); } catch (e) { /* skip */ } } });
+}
+function relayStop() {
+  relay.clients.forEach(c => { try { c.end(true); } catch (e) { /* skip */ } });
+  relay.clients = []; relay.seen.clear();
+}
+
+/* ---- host ---- */
+function broadcast() {
+  const sv = ++stateSeq;
+  conns.forEach(c => { if (c.open && c.pid) { try { c.send({ t: 'state', v: viewFor(c.pid), hs: hostSess, sv }); } catch (e) { /* dropped */ } } });
+}
+function startHostRelay() {
+  relayConns.clear();
+  relayStart(roomTopic('host'), (m, f) => {
+    if (role !== 'host' || !m || !f) return;
+    let c = relayConns.get(f);
+    if (!c) {
+      if (m.t !== 'hello') return;
+      c = { relay: true, from: f, pid: null, open: true, seen: 0, send: x => relaySend(roomTopic('g/' + f), x), close() { this.open = false; } };
+      relayConns.set(f, c);
+    }
+    c.seen = Date.now();
+    if (m.t !== 'ping') hostReceive(c, m);
+  });
+  clearInterval(beatIv);
+  /* every guest pings every 5s; anyone silent for 15-20s is treated as gone, and the computer covers their turns */
+  beatIv = setInterval(() => {
+    const now = Date.now();
+    relayConns.forEach((c, f) => { if (now - c.seen > 20000) { relayConns.delete(f); c.open = false; hostDrop(c); } });
+    conns.forEach(c => {
+      if (!c.relay && c.seen && now - c.seen > 15000) { try { c.close(); } catch (e) { /* skip */ } hostDrop(c); }
+      else { try { c.send({ t: 'ping' }); } catch (e) { /* skip */ } }
+    });
+  }, 5000);
+}
+function openHostPeer(attempt) {
+  attempt = attempt || 0;
+  if (typeof Peer === 'undefined') { setNet('Room open · backup link'); return; }
+  setNet('Opening room…', true);
+  peer = new Peer(peerIdFor(roomCode), { debug: 1 });
+  peer.on('open', () => setNet('Room open'));
+  peer.on('connection', c => {
+    c.on('data', m => hostReceive(c, m));
+    c.on('close', () => hostDrop(c));
+    c.on('error', () => hostDrop(c));
+  });
+  peer.on('disconnected', () => { setNet('Reconnecting…', true); setTimeout(() => { try { if (peer && !peer.destroyed) peer.reconnect(); } catch (e) { /* skip */ } }, 1500); });
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id' && attempt < 12) {
+      setNet('Reopening room…', true);
+      try { peer.destroy(); } catch (x) { /* skip */ }
+      setTimeout(() => { if (role === 'host') openHostPeer(attempt + 1); }, 3000);
+    } else if (e.type !== 'peer-unavailable') setNet('Connection problem (' + e.type + ')', true);
+  });
+}
+function hostReceive(c, m) {
+  if (!m || typeof m !== 'object' || !S) return;
+  c.seen = Date.now();
+  if (m.t === 'ping') return;
+  if (m.t === 'away' && c.pid) {
+    conns.delete(c);
+    const p = S.players.find(x => x.id === c.pid);
+    if (p) p.online = false;
+    const w = S.waiting.find(x => x.id === c.pid);
+    if (w) w.online = false;
+    afterPresence();
+    return;
+  }
+  if (m.t === 'hello') {
+    const pid = String(m.cid || '').slice(0, 24);
+    if (!pid || pid === S.hostId) { try { c.close(); } catch (e) { /* skip */ } return; }
+    const name = String(m.name || '').trim().slice(0, 14) || 'Player';
+    c.pid = pid; conns.add(c);
+    let p = S.players.find(x => x.id === pid);
+    if (!p) {
+      p = S.players.find(x => !x.bot && !x.online && x.id !== S.hostId && x.name.toLowerCase() === name.toLowerCase());
+      if (p) p.id = pid;
+    }
+    if (p) { p.name = name; p.online = true; afterPresence(); return; }
+    const w = S.waiting.find(x => x.id === pid);
+    if (w) { w.name = name; w.online = true; changed(); return; }
+    if (S.phase === 'lobby') {
+      if (S.players.length < MAX_PLAYERS) S.players.push(newPlayer(pid, name, false));
+      else {
+        const b = S.players.map(x => x.bot).lastIndexOf(true);
+        if (b < 0) { try { c.send({ t: 'full' }); } catch (e) { /* skip */ } conns.delete(c); return; }
+        S.players[b] = newPlayer(pid, name, false);
+      }
+    } else S.waiting.push({ id: pid, name, online: true });
+    addLog(`${name} joined the room.`);
+    changed();
+    return;
+  }
+  if (m.t === 'bye' && c.pid) {
+    const i = idxOf(c.pid);
+    if (S.phase === 'lobby' && i >= 0) S.players.splice(i, 1);
+    S.waiting = S.waiting.filter(w => w.id !== c.pid);
+    conns.delete(c);
+    if (S.phase !== 'lobby' && i >= 0 && S.players[i] && S.players[i].id === c.pid) { S.players[i].online = false; afterPresence(); return; }
+    changed();
+    return;
+  }
+  if (m.t === 'act' && c.pid) handleAct(c.pid, String(m.act), m.data);
+}
+function hostDrop(c) {
+  if (!conns.has(c)) return;
+  conns.delete(c);
+  if (c.pid && ![...conns].some(x => x.pid === c.pid)) {
+    const p = S && S.players.find(x => x.id === c.pid);
+    if (p) p.online = false;
+    const w = S && S.waiting.find(x => x.id === c.pid);
+    if (w) w.online = false;
+    afterPresence();
+  }
+}
+function afterPresence() {
+  if (!S) return;
+  step();
+}
+function normalizeHost() {
+  S.players.forEach(p => { if (!p.bot) p.online = p.id === me; });
+  S.waiting.forEach(w => { w.online = false; });
+  token++; clearTimeout(timer);
+  if (S.phase !== 'lobby') step();
+}
+
+/* ---- guest ---- */
+function joinRoom(code) {
+  role = 'guest'; roomCode = code; V = null; everConnected = false; link = null; lastState = { hs: null, sv: 0 };
+  homeMsg = 'Connecting to room ' + code + '…'; homeErr = false;
+  render();
+  setNet('Connecting…', true);
+  relayStart(roomTopic('g/' + me), guestRelayMsg);
+  clearTimeout(fallbackTimer); fallbackTimer = setTimeout(useRelay, 4000);
+  clearTimeout(giveUpTimer);
+  giveUpTimer = setTimeout(() => {
+    if (role === 'guest' && !everConnected) leave(`Couldn't reach room ${code}. Check the code, and that the host still has the game open.`);
+  }, 25000);
+  clearInterval(beatIv);
+  beatIv = setInterval(() => {
+    if (role !== 'guest' || !link || !hostConn) return;
+    try { hostConn.send({ t: 'ping' }); } catch (e) { /* skip */ }
+    if (Date.now() - lastHostMsg > 16000) {
+      setNet('Lost the host. Reconnecting…', true);
+      if (link === 'relay') hostConn.send({ t: 'hello', cid: me, name: myName });
+      else { link = null; hostConn = null; lastHostMsg = Date.now(); retryLater(); useRelay(); }
+    }
+  }, 5000);
+  if (typeof Peer === 'undefined') { useRelay(); return; }
+  peer = new Peer({ debug: 1 });
+  peer.on('open', connectHost);
+  peer.on('disconnected', () => { setTimeout(() => { try { if (peer && !peer.destroyed) peer.reconnect(); } catch (e) { /* skip */ } }, 1500); });
+  peer.on('error', e => {
+    if (link === 'relay') return;
+    useRelay();
+    setNet(e.type === 'peer-unavailable' ? (everConnected ? 'Host not reachable. Retrying…' : 'Trying another way to reach the room…') : 'Connection problem. Retrying…', true);
+    retryLater();
+  });
+}
+function linked(how) {
+  everConnected = true; link = how; clearTimeout(giveUpTimer); lastHostMsg = Date.now();
+  setNet('Connected' + (how === 'relay' ? ' · backup link' : ''));
+  setItem(LS, 'st-guest', { code: roomCode });
+}
+function useRelay() {
+  if (role !== 'guest' || link === 'peer' || helloIv) return;
+  const hello = () => {
+    if (role !== 'guest' || link) { clearInterval(helloIv); helloIv = 0; return; }
+    relaySend(roomTopic('host'), { t: 'hello', cid: me, name: myName });
+  };
+  helloIv = setInterval(hello, 2000); hello();
+}
+function relayHostConn() { return { relay: true, open: true, send: m => relaySend(roomTopic('host'), m) }; }
+function guestRelayMsg(m) {
+  if (role !== 'guest' || !m) return;
+  lastHostMsg = Date.now();
+  if (m.t !== 'state' && m.t !== 'full' && m.t !== 'kicked' && m.t !== 'closed') return;
+  if (m.t === 'state' && link !== 'peer' && link !== 'relay') { hostConn = relayHostConn(); linked('relay'); }
+  else if (link === 'relay') setNet('Connected · backup link');
+  if (link === 'relay' || m.t !== 'state') guestMsg(m);
+}
+function guestMsg(m) {
+  if (!m) return;
+  if (m.t === 'full') { leave('That room is full. Rooms hold 16 players.'); return; }
+  if (m.t === 'kicked') { leave('The host removed you from the room.'); return; }
+  if (m.t === 'closed') { leave('The host closed the room.'); return; }
+  if (m.t !== 'state') return;
+  if (m.hs === lastState.hs && m.sv <= lastState.sv) return;
+  lastState = { hs: m.hs, sv: m.sv };
+  V = m.v;
+  render();
+}
+function connectHost() {
+  if (!peer || peer.destroyed || role !== 'guest') return;
+  const c = peer.connect(peerIdFor(roomCode), { reliable: true });
+  if (!link) hostConn = c;
+  c.on('open', () => { hostConn = c; c.send({ t: 'hello', cid: me, name: myName }); linked('peer'); });
+  c.on('data', m => { if (link === 'peer' && hostConn === c) { lastHostMsg = Date.now(); guestMsg(m); } });
+  c.on('close', () => {
+    if (role === 'guest' && hostConn === c) { link = null; hostConn = null; setNet('Lost the host. Reconnecting…', true); retryLater(); useRelay(); }
+  });
+}
+function retryLater() {
+  clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => {
+    if (!peer || peer.destroyed || role !== 'guest') return;
+    if (peer.disconnected) { try { peer.reconnect(); } catch (e) { /* skip */ } setTimeout(connectHost, 1500); }
+    else connectHost();
+  }, 2500);
+}
+
+/* ---- shared ---- */
+function act(name, data) {
+  if (role === 'guest') { if (hostConn && hostConn.open) hostConn.send({ t: 'act', act: name, data }); }
+  else if (S) handleAct(me, name, data);
+}
+
+function leave(msg) {
+  if (role === 'guest' && hostConn && hostConn.open) { try { hostConn.send({ t: 'bye' }); } catch (e) { /* skip */ } }
+  if (role === 'host') conns.forEach(c => { try { c.send({ t: 'closed' }); } catch (e) { /* skip */ } });
+  token++; clearTimeout(timer);
+  clearTimeout(retryTimer); clearTimeout(fallbackTimer); clearTimeout(giveUpTimer); clearInterval(helloIv); clearInterval(beatIv); helloIv = 0;
+  const p = peer; setTimeout(() => { try { p && p.destroy(); } catch (e) { /* skip */ } }, 300);
+  setTimeout(relayStop, 300);
+  relayConns.clear(); conns.clear(); link = null; peer = null; hostConn = null;
+  if (role === 'host') setItem(LS, 'st-host', null);
+  if (role === 'guest') setItem(LS, 'st-guest', null);
+  role = null; S = null; V = null; roomCode = ''; pickFor = ''; shownOver = null;
+  homeMsg = msg || ''; homeErr = !!msg;
+  setNet('');
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  closeModal();
+  render();
+}
+
+/* ================= rendering ================= */
+function myPlayer() { return V && V.me >= 0 ? V.players[V.me] : null; }
+function isRoomHost() { return role === 'host'; }
+function amSpy() { const p = myPlayer(); return !!(p && p.spy); }
+function myTeam() { const p = myPlayer(); return p ? p.team : ''; }
+function myGuessTurn() { const p = myPlayer(); return !!(V && V.phase === 'guess' && p && !p.spy && p.team === V.turn); }
+function myClueTurn() { const p = myPlayer(); return !!(V && V.phase === 'clue' && p && p.spy && p.team === V.turn); }
+function myTurn() { return myGuessTurn() || myClueTurn(); }
+function dirAttr() { return V && V.lang === 'ar' ? ' dir="rtl"' : ''; }
+let recvAt = 0, clockIvL = 0;
+
+function render() {
+  const screen = !role || (role === 'guest' && !V) ? 'home' : V && V.phase === 'lobby' ? 'lobby' : 'game';
+  if (screen !== 'game') { document.title = 'Spy Teams · Game Night'; wasMyTurn = false; if (screen === 'home' && wakeLock) { try { wakeLock.release(); } catch (e) { /* skip */ } wakeLock = null; } }
+  $('home').hidden = screen !== 'home';
+  $('lobby').hidden = screen !== 'lobby';
+  $('app').hidden = screen !== 'game';
+  if (screen === 'home') renderHome();
+  else if (screen === 'lobby') renderLobby();
+  else renderGame();
+}
+
+function renderNet() {
+  const el = $('net');
+  el.textContent = role === 'host' || role === 'guest' ? `· Room ${roomCode} · ${netText}` : '';
+  el.className = 'net' + (netWarn ? ' warn' : '');
+  $('lNet').textContent = netText || ' ';
+}
+
+function renderHome() {
+  if (document.activeElement !== $('hName') && !$('hName').value) $('hName').value = myName;
+  $('onlineBox').hidden = !onlineOK;
+  $('onlineNote').hidden = onlineOK;
+  const savedHost = getItem(LS, 'st-host');
+  $('hReopen').hidden = !(savedHost && savedHost.code && role !== 'guest');
+  if (savedHost && savedHost.code) $('hReopen').textContent = `Reopen your room ${savedHost.code}`;
+  $('hCreate').disabled = $('hJoin').disabled = role === 'guest';
+  const m = $('homeMsg');
+  m.textContent = homeMsg; m.className = 'msg' + (homeErr ? ' err' : '');
+}
+
+function shareLink() { return location.origin + location.pathname + '#' + roomCode; }
+function teamHTML(t, editable) {
+  const host = isRoomHost();
+  const rows = V.players.map((p, i) => ({ p, i })).filter(x => x.p.team === t).sort((a, b) => b.p.spy - a.p.spy);
+  const list = rows.map(({ p, i }) => {
+    const rm = editable && host && p.id !== V.hostId ? `<button class="x" type="button" data-remove="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">✕</button>` : '';
+    return `<li class="${p.online ? '' : 'off'}"><span class="nm">${esc(p.name)}${i === V.me ? ' (you)' : ''}</span>${p.spy ? '<span class="spy-tag">Spymaster</span>' : ''}${rm}</li>`;
+  }).join('') || '<li class="note">Nobody yet</li>';
+  let btns = '';
+  if (editable && V.me >= 0) {
+    const mine = myTeam() === t;
+    btns = mine
+      ? `<button class="btn" type="button" data-spy="1">${amSpy() ? 'Stop being spymaster' : 'Be the spymaster'}</button>`
+      : `<button class="btn" type="button" data-team="${t}">Join ${TEAM[t]}</button>`;
+  }
+  return `<div class="team ${t}"><h4>${TEAM[t]} team</h4><ul>${list}</ul>${btns}</div>`;
+}
+function renderLobby() {
+  renderNet();
+  $('lCode').textContent = roomCode;
+  $('lLink').textContent = shareLink();
+  $('lCopy').textContent = navigator.share ? 'Share link' : 'Copy link';
+  const host = role === 'host';
+  $('lCount').textContent = `Pick a team (${V.players.length} players)`;
+  $('lTeams').innerHTML = teamHTML('r', true) + teamHTML('b', true);
+  $('lLangSel').value = V.opts.lang; $('lTimerSel').value = String(V.opts.timer);
+  $('lLangSel').disabled = $('lTimerSel').disabled = !host;
+  $('lHost').hidden = !host;
+  $('lStart').disabled = !!V.ready;
+  $('lNote').textContent = V.ready
+    ? `${V.ready} Each team needs a spymaster and at least one guesser.`
+    : host ? 'Ready! More friends can still join with the code.' : 'Waiting for the host to start.';
+}
+
+let lastBoardKey = '', prevUp = new Set();
+function renderGame() {
+  if (!V) return;
+  renderNet();
+  recvAt = Date.now();
+  if (V.phase !== 'over' && $('sheet').dataset.kind === 'results') closeModal();
+  $('roundNo').textContent = `Game ${V.game}`;
+  renderPeople();
+  renderStage();
+  renderAct();
+  renderLog();
+  turnSignal(); keepAwake();
+  clearInterval(clockIvL); clockIvL = 0;
+  if (V.left_ms) clockIvL = setInterval(drawClock, 400);
+  if (V.phase === 'over' && shownOver !== V.game) {
+    shownOver = V.game;
+    setTimeout(() => { if (V && V.phase === 'over' && $('modal').hidden) openResults(); }, 2200);
+  }
+}
+
+function renderPeople() {
+  const sb = t => {
+    const ms = V.players.filter(p => p.team === t);
+    const spy = ms.find(p => p.spy);
+    const on = (V.phase === 'clue' || V.phase === 'guess') && V.turn === t;
+    return `<div class="sb ${t}${on ? ' on' : ''}"><div class="big">${V.rem[t]} <small style="font-size:12px">left</small></div><div class="who-list">${spy ? '<b>' + esc(spy.name) + '</b> · ' : ''}${esc(ms.filter(p => !p.spy).map(p => p.name).join(', '))}</div></div>`;
+  };
+  $('people').innerHTML = sb('r') + sb('b');
+}
+
+function drawClock() {
+  const el = $('clockFill');
+  if (!el || !V || !V.left_ms) return;
+  const left = Math.max(0, V.left_ms - (Date.now() - recvAt));
+  el.style.width = (100 * left / (V.total || 1)).toFixed(1) + '%';
+}
+
+function renderStage() {
+  const el = $('stage');
+  const spyView = amSpy() || V.phase === 'over';
+  const guessing = myGuessTurn();
+  let bar = '';
+  if (V.phase === 'clue') bar = `<div class="clue-bar ${V.turn}">${myClueTurn() ? 'Your turn: give your team a clue.' : TEAM[V.turn] + "'s spymaster is thinking of a clue…"}</div>`;
+  else if (V.phase === 'guess' && V.clue) bar = `<div class="clue-bar ${V.turn}"><span class="cw"${dirAttr()}>${esc(V.clue.w)}</span><span class="cn">${V.clue.n === 'inf' ? '∞' : V.clue.n}</span></div>`;
+  else if (V.phase === 'over') bar = `<div class="clue-bar ${V.winner}"><span class="cw">${TEAM[V.winner]} wins!</span></div>`;
+  const fresh = new Set();
+  V.board.forEach((c, k) => { if (c.up && !prevUp.has(k) && lastBoardKey === String(V.game)) fresh.add(k); });
+  if (lastBoardKey !== String(V.game)) { prevUp = new Set(); lastBoardKey = String(V.game); }
+  const cards = V.board.map((c, k) => {
+    const cls = ['card'];
+    if (c.up) { cls.push('up', 'k-' + c.k); if (fresh.has(k)) cls.push('fresh'); if (spyView && V.phase !== 'over') cls.push('dim'); }
+    else if (spyView && c.k) cls.push('key-' + c.k);
+    const can = guessing && !c.up;
+    if (can) cls.push('can');
+    if (V.myPoint === k) cls.push('pointed');
+    const pts = !c.up && V.points[k] ? `<span class="pts">${esc(V.points[k].join(', '))}</span>` : '';
+    const go = can && V.myPoint === k ? '<span class="go">Tap again to pick</span>' : '';
+    const label = c.up && c.k === 'x' ? '☠ ' + esc(c.w) : esc(c.w);
+    return `<button class="${cls.join(' ')}" type="button" data-k="${k}"${dirAttr()}${can ? '' : ' disabled'} aria-label="${esc(c.w)}${c.up ? ', ' + ({ r: 'red', b: 'blue', n: 'nobody\'s', x: 'the trap' }[c.k]) : ''}">${pts}${label}${go}</button>`;
+  }).join('');
+  const hist = V.clues.length ? `<div class="history">${V.clues.slice(-6).map(c => `<span><b class="${c.team}"${dirAttr()}>${esc(c.w)} ${c.n === 'inf' ? '∞' : c.n}</b>${c.found.length ? ': ' + c.found.map(f => esc(f.w)).join(', ') : ''}</span>`).join('')}</div>` : '';
+  el.innerHTML = `${bar}${V.left_ms ? '<div class="clockline"><i id="clockFill"></i></div>' : ''}<div class="grid">${cards}</div>${hist}`;
+  prevUp = new Set(V.board.map((c, k) => c.up ? k : -1).filter(k => k >= 0));
+  drawClock();
+}
+
+function renderAct() {
+  const host = isRoomHost();
+  let status = '', sub = '', more = '', form = false;
+  const p = myPlayer();
+  const tn = TEAM[V.turn];
+  if (V.phase === 'clue') {
+    if (myClueTurn()) {
+      status = 'Your clue, spymaster.'; sub = `One word, and how many of your ${TEAM[p.team]} words it points to. Avoid the black trap word!`; form = true;
+    } else if (p && p.team === V.turn) { status = 'Your spymaster is thinking…'; sub = 'Get ready to guess.'; }
+    else { status = `${tn} is getting a clue.`; sub = amSpy() ? 'Your turn comes next.' : 'Watch, and wait for your turn.'; }
+  } else if (V.phase === 'guess') {
+    const n = V.clue && V.clue.n === 'inf' ? 'as many as you like' : V.left >= 90 ? 'as many as you like' : `${V.left} guess${V.left === 1 ? '' : 'es'} left`;
+    if (myGuessTurn()) {
+      status = 'Your team is guessing.'; sub = `Tap a word to point at it, tap it again to pick it. ${n}.`;
+      more = '<div class="actions"><button class="btn" type="button" id="aEnd">End our turn</button></div>';
+    } else if (p && p.team === V.turn) { status = 'Your team is guessing.'; sub = 'You can\'t help. Just watch!'; }
+    else { status = `${tn} is guessing.`; sub = n.charAt(0).toUpperCase() + n.slice(1) + '.'; }
+    const s = V.players.findIndex(x => x.team === p?.team && x.spy);
+    if (p && !p.spy && s >= 0 && !V.players[s].online) more += '<div class="actions"><button class="btn" type="button" id="aTakeSpy">Our spymaster left. Take over</button></div>';
+  } else if (V.phase === 'over') {
+    const won = p && p.team === V.winner;
+    status = won ? 'Your team wins!' : `${TEAM[V.winner]} wins!`;
+    sub = V.why === 'trap' ? `${TEAM[other(V.winner)]} picked the trap word.` : `${TEAM[V.winner]} found all their words.`;
+    more = `<div class="actions"><button class="btn" type="button" id="aResults">Results</button>${host ? '<button class="btn primary" type="button" id="aNew">New game</button><button class="btn" type="button" id="aLobby">Change teams</button>' : ''}</div>`;
+  }
+  if (V.phase === 'clue' && p && !p.spy) {
+    const s = V.players.findIndex(x => x.team === p.team && x.spy);
+    if (s < 0 || !V.players[s].online) more += '<div class="actions"><button class="btn" type="button" id="aTakeSpy">Our spymaster left. Take over</button></div>';
+  }
+  $('act').classList.toggle('mine', myTurn());
+  $('status').textContent = status;
+  $('sub').textContent = sub;
+  const wasHidden = $('clueForm').hidden;
+  $('clueForm').hidden = !form;
+  if (form) {
+    $('clueSend').disabled = false;
+    $('clueIn').dir = V.lang === 'ar' ? 'rtl' : 'auto';
+    if (wasHidden) { $('clueIn').value = ''; $('errLine').textContent = ''; if (window.matchMedia('(hover: hover)').matches) setTimeout(() => $('clueIn').focus(), 0); }
+  } else $('errLine').textContent = '';
+  $('actMore').innerHTML = more;
+}
+
+let wasMyTurn = false, wakeLock = null;
+function turnSignal() {
+  const mine = myTurn();
+  document.title = mine ? 'Your turn · Spy Teams' : 'Spy Teams · Game Night';
+  if (mine && !wasMyTurn) { try { navigator.vibrate && navigator.vibrate(80); } catch (e) { /* not supported */ } }
+  wasMyTurn = mine;
+}
+function keepAwake() {
+  const want = !!(V && V.phase !== 'lobby') && document.visibilityState === 'visible';
+  if (want && !wakeLock && navigator.wakeLock) {
+    navigator.wakeLock.request('screen').then(l => { wakeLock = l; l.addEventListener('release', () => { wakeLock = null; }); }).catch(() => {});
+  } else if (!want && wakeLock) { try { wakeLock.release(); } catch (e) { /* skip */ } wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+function renderLog() {
+  const log = V.log || [];
+  $('logLast').textContent = log.length ? log[log.length - 1] : 'Game log';
+  $('logList').innerHTML = log.slice().reverse().map(t => `<li>${esc(t)}</li>`).join('');
+  $('logList').setAttribute('start', log.length);
+}
+
+/* ================= modals ================= */
+function openModal(html, kind) { $('sheet').innerHTML = html; $('sheet').dataset.kind = kind || ''; $('modal').hidden = false; const f = $('sheet').querySelector('button, input, select'); if (f && kind !== 'results') f.focus(); }
+function closeModal() { $('modal').hidden = true; $('sheet').innerHTML = ''; $('sheet').dataset.kind = ''; }
+
+function openRules() {
+  openModal(`<h2>How to <span>play</span></h2>
+  <p class="lede">Two teams, Red and Blue, race to find their secret words among 25 on the board.</p>
+  <ul class="rules">
+    <li><b>Spymasters.</b> Each team has one. Only spymasters see which words are Red, Blue, nobody's (beige) and the one black <b>trap</b>.</li>
+    <li><b>Clue.</b> On your team's turn your spymaster gives one word and a number, like <b>OCEAN 2</b>: "two of our words go with ocean". The clue can't be a word on the board.</li>
+    <li><b>Guess.</b> Teammates tap a word to point at it (everyone sees), and tap again to pick it. You get as many picks as the number, plus one bonus.</li>
+    <li><b>Keep going or stop.</b> Pick your own colour and you can keep guessing. Pick a beige word or the other team's word and your turn ends. You can also end the turn yourself.</li>
+    <li><b>The trap.</b> Pick the black word and your team loses on the spot.</li>
+    <li><b>Winning.</b> The first team to find all their words wins. The team that starts has 9 words; the other has 8.</li>
+    <li><b>Players.</b> At least 2 per team, each on their own phone. Late arrivals join the smaller team.</li>
+  </ul>
+  <div class="sheet-actions"><button class="btn primary" type="button" data-close>Got it</button></div>`);
+}
+function openResults() {
+  if (!V || V.phase !== 'over') return;
+  const host = isRoomHost();
+  const won = myTeam() === V.winner;
+  const btns = host
+    ? `<button class="btn" type="button" data-close>See the board</button><button class="btn" type="button" id="mLobby">Change teams</button><button class="btn primary" type="button" id="mNew">New game</button>`
+    : `<button class="btn primary" type="button" data-close>See the board</button>`;
+  openModal(`<h2>${won ? 'Your team <span>wins!</span>' : TEAM[V.winner] + ' <span>wins</span>'}</h2>
+    <p class="lede">${V.why === 'trap' ? `${TEAM[other(V.winner)]} picked the trap word.` : `${TEAM[V.winner]} found all their words.`} Everyone can see the whole key now.</p>
+    <div class="teams" style="margin-bottom:14px">${teamHTML('r', false)}${teamHTML('b', false)}</div>
+    <p class="lede">Games won at this table: ${V.players.map(p => `${esc(p.name)} ${p.wins}`).join(' · ')}</p>
+    <div class="sheet-actions">${btns}</div>`, 'results');
+}
+function openScores() {
+  if (!V) return;
+  openModal(`<h2>The <span>teams</span></h2>
+    <div class="teams" style="margin-bottom:14px">${teamHTML('r', false)}${teamHTML('b', false)}</div>
+    <p class="lede">Games won at this table: ${V.players.map(p => `${esc(p.name)} ${p.wins}`).join(' · ')}</p>
+    <div class="sheet-actions"><button class="btn primary" type="button" data-close>Close</button></div>`);
+}
+function openLeave() {
+  const msg = role === 'host' ? 'This closes the room for everyone in it.' : 'You can rejoin with the same code and name.';
+  openModal(`<h2>${role === 'host' ? 'Close the <span>room</span>?' : 'Leave the <span>room</span>?'}</h2>
+    <p class="lede">${msg}</p>
+    <div class="sheet-actions"><button class="btn" type="button" data-close>Stay</button><button class="btn primary" type="button" id="mLeave">${role === 'host' ? 'Close room' : 'Leave'}</button></div>`);
+}
+
+/* ================= starting things ================= */
+function readName() {
+  const v = ($('hName').value || '').trim().slice(0, 14);
+  if (!v) { homeMsg = 'Type your name first.'; homeErr = true; renderHome(); $('hName').focus(); return false; }
+  myName = v; setItem(LS, 'st-name', v);
+  return true;
+}
+function createRoom() {
+  if (!readName()) return;
+  if (waitNet(createRoom)) return;
+  if (!netReady()) { homeMsg = "Couldn't load the connection tools. Check your internet and reload."; homeErr = true; renderHome(); return; }
+  role = 'host'; roomCode = (window.GN && GN.code()) || newCode(); hostSess = rid(); shownOver = null; lastBoardKey = '';
+  S = baseState('room', getItem(LS, 'st-opts'));
+  S.usedWords = getItem(LS, 'st-used') || { en: [], ar: [] };
+  S.players.push(newPlayer(me, myName, false));
+  history.replaceState(null, '', '#' + roomCode);
+  openHostPeer(); startHostRelay();
+  changed();
+}
+function reopenRoom() {
+  const g = getItem(LS, 'st-host');
+  if (!g || !g.S) return;
+  if (!readName()) return;
+  if (waitNet(reopenRoom)) return;
+  if (!netReady()) { homeMsg = "Couldn't load the connection tools. Check your internet and reload."; homeErr = true; renderHome(); return; }
+  role = 'host'; roomCode = g.code; hostSess = rid(); S = g.S;
+  const hp = S.players.find(p => p.id === S.hostId) || S.players[0];
+  if (hp) { hp.id = me; hp.name = myName; }
+  S.hostId = me;
+  shownOver = S.phase === 'over' ? S.game : null; lastBoardKey = '';
+  if (S.phase === 'clue' || S.phase === 'guess') setClock();
+  history.replaceState(null, '', '#' + roomCode);
+  openHostPeer(); startHostRelay();
+  normalizeHost();
+  changed();
+}
+function joinFromForm() {
+  if (!readName()) return;
+  const code = ($('hCode').value || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (code.length !== 4) { homeMsg = 'Room codes are 4 letters.'; homeErr = true; renderHome(); return; }
+  if (waitNet(joinFromForm)) return;
+  if (!netReady()) { homeMsg = "Couldn't load the connection tools. Check your internet and reload."; homeErr = true; renderHome(); return; }
+  history.replaceState(null, '', '#' + code);
+  pickFor = ''; shownOver = null; lastBoardKey = '';
+  joinRoom(code);
+}
+setInterval(() => { if (S && S.usedWords) setItem(LS, 'st-used', { en: (S.usedWords.en || []).slice(-BANK.en.length + 25), ar: (S.usedWords.ar || []).slice(-BANK.ar.length + 25) }); }, 5000);
+
+/* ================= events ================= */
+$('hCreate').addEventListener('click', createRoom);
+$('hReopen').addEventListener('click', reopenRoom);
+$('joinForm').addEventListener('submit', e => { e.preventDefault(); joinFromForm(); });
+$('hRules').addEventListener('click', openRules);
+$('hName').addEventListener('input', () => { if (homeErr) { homeMsg = ''; homeErr = false; $('homeMsg').textContent = ''; } });
+
+$('lShuffle').addEventListener('click', () => act('shuffle'));
+$('lStart').addEventListener('click', () => act('start'));
+function sendSettings() { const o = fixOpts({ lang: $('lLangSel').value, timer: $('lTimerSel').value }); setItem(LS, 'st-opts', o); act('settings', o); }
+['lLangSel', 'lTimerSel'].forEach(id => $(id).addEventListener('change', sendSettings));
+$('lTeams').addEventListener('click', e => {
+  const r = e.target.closest('[data-remove]'); if (r) { act('remove', { id: r.dataset.remove }); return; }
+  const t = e.target.closest('[data-team]'); if (t) { act('team', { t: t.dataset.team }); return; }
+  if (e.target.closest('[data-spy]')) act('spy');
+});
+$('lRules').addEventListener('click', openRules);
+$('lLeave').addEventListener('click', openLeave);
+$('lCopy').addEventListener('click', () => {
+  const link = shareLink(), msg = $('lCopyMsg');
+  const done = t => { msg.textContent = t; setTimeout(() => { msg.textContent = ''; }, 2500); };
+  if (navigator.share) {
+    navigator.share({ title: 'Spy Teams', text: `Join my Spy Teams room. Code: ${roomCode}`, url: link }).catch(() => {});
+    return;
+  }
+  const pickText = () => { const r = document.createRange(); r.selectNodeContents($('lLink')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); done('Link selected. Copy it from here.'); };
+  try { navigator.clipboard.writeText(link).then(() => done('Link copied. Send it to your friends.'), pickText); } catch (e) { pickText(); }
+});
+
+$('clueForm').addEventListener('submit', e => {
+  e.preventDefault();
+  if (!myClueTurn()) return;
+  const w = $('clueIn').value.replace(/\s+/g, ' ').trim();
+  const prob = clueProblem(w, V.board);
+  if (prob) { $('errLine').textContent = prob; return; }
+  $('errLine').textContent = '';
+  $('clueSend').disabled = true;
+  act('clue', { w, n: $('clueNum').value });
+});
+$('stage').addEventListener('click', e => {
+  const b = e.target.closest('[data-k]');
+  if (!b || b.disabled || !myGuessTurn()) return;
+  const k = +b.dataset.k;
+  if (V.myPoint === k) { b.disabled = true; act('reveal', { k }); }
+  else act('point', { k });
+});
+$('actMore').addEventListener('click', e => {
+  if (e.target.closest('#aEnd')) act('endTurn');
+  else if (e.target.closest('#aTakeSpy')) act('spy');
+  else if (e.target.closest('#aNew')) { closeModal(); act('start'); }
+  else if (e.target.closest('#aLobby')) { closeModal(); act('lobby'); }
+  else if (e.target.closest('#aResults')) openResults();
+});
+$('btnRules').addEventListener('click', openRules);
+$('btnScores').addEventListener('click', openScores);
+$('btnLeave').addEventListener('click', openLeave);
+$('btnMenu').addEventListener('click', () => {
+  openModal(`<h2>Menu</h2>
+    <div class="menu-list">
+      <button class="btn" type="button" id="mmRules">Rules</button>
+      <button class="btn" type="button" id="mmScores">Teams</button>
+      ${V && V.phase === 'over' ? '<button class="btn" type="button" id="mmResults">Results</button>' : ''}
+      <button class="btn" type="button" id="mmLeave">${role === 'host' ? 'Close room' : 'Leave room'}</button>
+    </div>
+    <div class="sheet-actions"><button class="btn primary" type="button" data-close>Back to the game</button></div>`);
+});
+$('modal').addEventListener('click', e => {
+  if (e.target === $('modal') || e.target.closest('[data-close]')) closeModal();
+  else if (e.target.closest('#mmRules')) openRules();
+  else if (e.target.closest('#mmScores')) openScores();
+  else if (e.target.closest('#mmResults')) openResults();
+  else if (e.target.closest('#mmLeave')) openLeave();
+  else if (e.target.closest('#mNew')) { closeModal(); act('start'); }
+  else if (e.target.closest('#mLobby')) { closeModal(); act('lobby'); }
+  else if (e.target.closest('#mLeave')) { closeModal(); leave(); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) closeModal(); });
+window.addEventListener('pagehide', () => { if (role === 'guest' && hostConn && hostConn.open) { try { hostConn.send({ t: 'away' }); } catch (e) { /* skip */ } } });
+window.addEventListener('beforeunload', e => { if (role === 'host' && conns.size && !window.GN_LEAVING) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ================= boot ================= */
+(function boot() {
+  const hashCode = (location.hash || '').replace('#', '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (hashCode.length === 4) $('hCode').value = hashCode;
+  const savedGuest = getItem(LS, 'st-guest');
+  const savedHost = getItem(LS, 'st-host');
+  render();
+  if (!onlineOK) return;
+  NET.then(() => {
+    if (role) return;
+    if (window.GN && GN.code()) { $('hName').value = GN.name(); if (GN.isHost()) createRoom(); else { $('hCode').value = GN.code(); joinFromForm(); } return; }
+    if (myName && savedHost && savedHost.code && hashCode === savedHost.code && netReady()) { reopenRoom(); return; }
+    if (myName && savedGuest && savedGuest.code && (!hashCode || hashCode === savedGuest.code) && netReady()) { joinRoom(savedGuest.code); return; }
+    if (hashCode.length === 4) { homeMsg = myName ? `Tap Join room to join room ${hashCode}.` : `Type your name, then tap Join room to join room ${hashCode}.`; renderHome(); }
+  });
+})();
+})();
+</script>
+
+</html>
